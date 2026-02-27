@@ -157,8 +157,8 @@ class Diffusion(nn.Module):
     def loss(self, x, state, weights=1.0):
         batch_size = len(x)
         t = torch.randint(0, self.n_timesteps, (batch_size,), device=x.device).long()
-        print("Stop!")
-        input()
+        # print("Stop!")
+        # input()
         return self.p_losses(x, state, t, weights)
 
     def forward(self, state, *args, **kwargs):
@@ -309,8 +309,8 @@ class PostDiffusion(nn.Module):
     def loss(self, x, state, weights=1.0):
         batch_size = len(x)
         t = torch.randint(0, self.n_timesteps, (batch_size,), device=x.device).long()
-        print("Stop!")
-        input()
+        # print("Stop!")
+        # input()
         return self.p_losses(x, state, t, weights)
 
     # def interpolate(self,tensor, output_dim):
