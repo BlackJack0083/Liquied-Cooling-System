@@ -29,11 +29,12 @@ from tianshou.policy import PPOPolicy
 from tianshou.trainer import onpolicy_trainer
 from datetime import datetime
 from BatteryEnv.multi_battery_env import make_env
+from tianshou.utils import RunningMeanStd
 
 module_name = "ppo_policy.pth"
 
 # ============ 小规模预实验参数 ============
-num_batteries_per_group = 6   # 与 DSAC/SAC 保持一致
+num_batteries_per_group = 12   # 与 DSAC/SAC 保持一致
 num_groups = 4                # 与 DSAC/SAC 保持一致
 episode_steps = 200           # 每轮步数
 
@@ -53,7 +54,7 @@ value_clip = True       # 启用 value clip 避免 value 估计爆炸
 epoch = 500          # 减少用于快速验证
 step_per_epoch = 400
 episode_per_collect = 2   # 减少每次收集的 episode 数
-episode_per_test = 2
+episode_per_test = 3
 repeat_per_collect = 4    # 减少更新次数
 batch_size = 128         # 减小 batch size
 training_num = 4      # 4个并行环境
@@ -61,7 +62,7 @@ test_num = 1
 wd = 0.005
 
 # 日志
-logdir = f"log/ppo_pretest_{num_batteries_per_group}_{num_groups}/"
+logdir = f"log/ppo_pretest_{num_batteries_per_group}_{num_groups}_ep{epoch}/"
 time_now = datetime.now().strftime('%b%d-%H%M%S')
 log_path = os.path.join(logdir, 'ppo', str(time_now))
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -149,15 +150,21 @@ def main():
         max_grad_norm=max_grad_norm,
         value_clip=value_clip,
     )
-    
+        
     buffer = VectorReplayBuffer(
         total_size=episode_per_collect * episode_steps,
         buffer_num=training_num,
-        ignore_obs_next=True,
+        ignore_obs_next=True,        
     )
 
     # 创建Collector 
-    train_collector = Collector(policy, train_envs, buffer=buffer, exploration_noise=True)
+    train_collector = Collector(
+        policy, 
+        train_envs, 
+        buffer=buffer, 
+        exploration_noise=True,         
+    )
+    
     test_collector = Collector(policy, test_envs)
 
     # 日志

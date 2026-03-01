@@ -31,7 +31,7 @@ from BatteryEnv.multi_battery_env import make_env
 module_name = "sac_policy.pth"
 
 # ============ 小规模预实验参数 ============
-num_batteries_per_group = 6   # 与 DSAC 保持一致
+num_batteries_per_group = 12   # 与 DSAC 保持一致
 num_groups = 4                # 与 DSAC 保持一致
 episode_steps = 200           # 每轮步数
 
@@ -49,7 +49,7 @@ buffer_size = 100000
 epoch = 500          # 减少用于快速验证
 step_per_epoch = 200
 episode_per_collect = 1
-episode_per_test = 1
+episode_per_test = 3
 repeat_per_collect = 4
 update_per_step = 1
 batch_size = 128     # 减小batch
@@ -59,7 +59,7 @@ training_num = 4      # 4个并行环境
 test_num = 1
 
 # 日志
-logdir = f"log/sac_pretest_{num_batteries_per_group}_{num_groups}/"
+logdir = f"log/sac_pretest_{num_batteries_per_group}_{num_groups}_ep{epoch}/"
 time_now = datetime.now().strftime('%b%d-%H%M%S')
 log_path = os.path.join(logdir, 'sac', str(time_now))
 device = 'cuda' if torch.cuda.is_available() else 'cpu'

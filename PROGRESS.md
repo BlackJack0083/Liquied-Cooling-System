@@ -745,3 +745,84 @@ reward = base_reward - temp_penalty - delta_penalty - smooth_penalty - energy_pe
 1. **训练稳定性**: 较小的 step_per_epoch 会导致训练波动大
 2. **正奖励设计**: 添加温度达标正奖励有助于训练收敛
 3. **并行环境**: DummyVectorEnv 比 SubprocVectorEnv 更稳定
+
+---
+
+## 2026-02-28: 训练结果可视化脚本开发（DSAC/SAC/PPO）
+
+### 背景
+为 DSAC、SAC、PPO 三种算法创建可视化脚本 (`visualize_dsac.py`, `visualize_ppo.py`, `visualize_comparison.py`)
+
+### 犯的错误及教训
+
+#### 错误1: 没有先了解数据结构就编写代码
+- **问题**: 直接编写 `visualize_dsac.py`，没有先查看数据的实际结构
+- **教训**: 编写可视化脚本前，必须先探索数据来源，理解数据格式
+- **解决方法**: 先用 Explore agent 或手动查看 tensorboard 和 CSV 文件结构
+
+#### 错误2: TensorBoard 标签名称错误
+- **问题**: 使用了错误的 loss 标签 (`train/actor_loss`)，实际应为 `update/loss/actor`
+- **教训**: 不同训练框架/日志记录器使用的标签名称不同，必须先查询可用的 tags
+- **解决方法**:
+  ```python
+  # 先查询可用的 tags
+  ea.Tags()['scalars']  # 查看所有可用的 scalar 标签
+  ```
+
+#### 错误3: 没有理解 train/reward 和 test/reward 数据点数量不一致
+- **问题**: DSAC 的 train/reward 只有 100 个点，test/reward 有 501 个点，直接绘图导致对齐问题
+- **教训**: 需要先检查数据的实际长度，再决定如何对齐
+- **解决方法**: 根据实际数据长度选择显示范围
+
+#### 错误6: 错误假设 train/reward 和 test/reward 可以按 epoch 对齐
+- **问题**: 误以为 train/reward 的前 100 个点对应前 100 个 epoch
+- **教训**: 需要深入理解 Tianshou 的日志记录机制
+- **深入分析**:
+  - `test/reward`: 每个 epoch 结束后测试 1 次，记录 501 个点（500 epochs + 初始测试）
+  - `train/reward`: 由 `train_collector` 收集，只有当 `n/ep > 0`（完成完整 episode）且间隔 `train_interval` 步时才记录
+  - 源码位置: `tianshou/utils/logger/base.py` 的 `log_train_data` 函数
+  - 关键条件: `if collect_result["n/ep"] > 0` 和 `step - self.last_log_train_step >= self.train_interval`
+  - 实际上 train/reward 的 100 个点对应 100 个成功完成的训练 episode
+- **结论**: train/reward 和 test/reward 不是简单的一一对应关系，不能直接对齐显示
+
+#### 错误4: 对 CSV 文件命名格式理解错误
+- **问题**: 误以为 ep_100 是第 100 步的数据，实际上是第 100 个 epoch 结束后的测试数据
+- **教训**: 需要查看代码或文档，理解数据生成逻辑
+
+#### 错误5: 可视化需求不明确
+- **问题**: 没有向用户确认想要什么样的图表（折线/散点、epoch 范围等）
+- **教训**: 编写可视化代码前，必须与用户确认需求
+
+#### 错误7: 对 CSV 文件分布理解错误
+- **问题**: 为什么只有 env_0 和 env_4？没有 env_1, env_2, env_3？
+- **深入分析**:
+  - **环境索引分配**（来自 `make_env` 函数）:
+    - 训练环境: env_idx = 0, 1, 2, 3 (training_num = 4)
+    - 测试环境: env_idx = num_train_envs + i = 4 + 0 = 4 (test_num = 1)
+  - **CSV 保存条件**（来自 `multi_battery_env.py`）:
+    ```python
+    if self.allrew and self.log_path and self.episode_cnt % self.log_step == 0:
+        self._save_csv_log()
+    ```
+    - log_step = 100（默认值）
+    - 每 100 个 episode 保存一次
+  - **env_4 的 epoch 分布**: 300, 600, 900, 1200, 1500
+    - 说明测试环境的 episode_cnt 是累积计数的，或者进行了多轮训练
+
+### 正确的开发流程
+1. **探索数据**: 查看 tensorboard 和 CSV 文件结构
+2. **查询标签**: 使用 `ea.Tags()['scalars']` 查看可用的 tensorboard 标签
+3. **确认需求**: 与用户明确图表类型、显示范围等
+4. **编写代码**: 根据实际数据结构编写可视化脚本
+5. **验证结果**: 运行脚本并检查输出
+
+### 重要提示（以后不要再犯！）
+- **不要假设数据格式**，必须先验证
+- **不同算法的 tensorboard 标签可能不同**：
+  - DSAC: `update/loss/actor`, `update/loss/critic1`, `update/loss/critic2`
+  - PPO: `update/loss/clip`, `update/loss/vf`, `update/loss/ent`
+- **train 和 test 的数据点数量可能不一致**，原因：
+  - `test/reward`: 每 epoch 测试一次，固定记录
+  - `train/reward`: 只在完成 episode 且间隔 `train_interval` 步时记录
+  - 两者不是简单的一一对应关系，**不能直接对齐**
+- **CSV 文件命名格式**: `env_{env_index}_ep_{epoch}.csv` 表示第 epoch 个 epoch 结束后的测试数据

@@ -29,7 +29,7 @@ from BatteryEnv.multi_battery_env import make_env
 module_name = "dsac_policy.pth"
 
 # ============ 小规模预实验参数 ============
-num_batteries_per_group = 6   # 原来4 -> 现在6
+num_batteries_per_group = 12   # 原来4 -> 现在6
 num_groups = 4                # 原来2 -> 现在4
 episode_steps = 200           # 每轮步数
 
@@ -49,7 +49,7 @@ buffer_size = 100000  # 经验回放池容量
 epoch = 500          # 总训练轮数，减少用于快速验证
 step_per_epoch = 200  # 每个 epoch 包含的训练步数
 episode_per_collect = 1  # 采集阶段需要完成的回合数
-episode_per_test = 1  # 评估阶段运行的回合数
+episode_per_test = 3  # 评估阶段运行的回合数
 repeat_per_collect = 1  # 采集完数据后，重复进行更新的次数
 update_per_step = 1  # 训练强度系数
 batch_size = 256     # 从 buffer 中抽取的样本量
@@ -59,7 +59,7 @@ training_num = 4      # 4个并行环境
 test_num = 1
 
 # 日志
-logdir = f"log/pretest_{num_batteries_per_group}_{num_groups}/"
+logdir = f"log/dsac_pretest_{num_batteries_per_group}_{num_groups}_ep{epoch}/"
 time_now = datetime.now().strftime('%b%d-%H%M%S')
 log_path = os.path.join(logdir, 'dsac', str(time_now))
 device = 'cuda' if torch.cuda.is_available() else 'cpu'

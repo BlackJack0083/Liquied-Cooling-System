@@ -315,7 +315,7 @@ class MultiBatteryEnv(gym.Env):
             core_t = obs[i * 8 + 2]  # core_t
             if core_t > self.max_battery_tmp or core_t < self.min_battery_tmp:
                 done = True
-                reward -= 50.0  # 额外惩罚
+                # reward -= 50.0  # 额外惩罚
                 if self.debug:
                     logger.warning(
                         f"[Env {self.env_index}] 温度超限! 组{i}: {core_t:.2f}K"
@@ -369,27 +369,84 @@ class MultiBatteryEnv(gym.Env):
 
         return obs, reward, done, truncated, info
 
+    # def _calculate_reward(
+    #     self, obs: np.ndarray, current_action: list, last_action: list
+    # ) -> tuple:
+    #     """
+    #     计算奖励函数
+
+    #     奖励组成:
+    #         1. 温度偏差惩罚: 偏离目标温度的平方
+    #         2. 温度达标奖励: 温度在目标范围内时获得正奖励
+    #         3. 组间温差惩罚: 不同组之间的温差
+    #         4. 控制成本: λ * flow_rate + μ * |Δinlet_temp|
+
+    #     Args:
+    #         obs: 当前观测
+    #         current_action: 当前动作 [inlet_temp, flow_rate]
+    #         last_action: 上一步动作
+
+    #     Returns:
+    #         total_reward: 总奖励
+    #         breakdown: 奖励分解字典
+    #     """
+    #     inlet_temp, flow_rate = current_action
+    #     target_temp = self.target_temp
+
+    #     # 初始化奖励分解
+    #     breakdown = {
+    #         "temp_penalty": 0.0,
+    #         "temp_reward": 0.0,
+    #         "inter_group_temp_diff_penalty": 0.0,
+    #         "control_cost": 0.0,
+    #         "total": 0.0,
+    #     }
+
+    #     total_reward = 0.0
+
+    #     # === 1. 温度偏差惩罚 ===
+    #     for i in range(self.num_groups):
+    #         core_t = obs[i * 8 + 2]  # 核心平均温度
+    #         dist = abs(core_t - target_temp)
+    #         temp_penalty = 0.5 * (dist ** 2)  # 平方惩罚
+    #         total_reward -= temp_penalty
+    #         breakdown["temp_penalty"] -= temp_penalty
+
+    #     # === 2. 温度达标奖励 (新增) ===
+    #     # 当温度在目标范围附近时给予正奖励，让训练更容易收敛
+    #     temp_tolerance = 5.0  # 温度容差范围 ±5K
+    #     for i in range(self.num_groups):
+    #         core_t = obs[i * 8 + 2]
+    #         if abs(core_t - target_temp) < temp_tolerance:
+    #             # 温度越接近目标，奖励越高
+    #             reward_factor = 1.0 - abs(core_t - target_temp) / temp_tolerance
+    #             temp_reward = 10.0 * reward_factor  # 最高10分
+    #             total_reward += temp_reward
+    #             breakdown["temp_reward"] += temp_reward
+
+    #     # === 3. 组间温差惩罚 ===
+    #     if self.num_groups > 1:
+    #         group_avg_temps = [obs[i * 8 + 2] for i in range(self.num_groups)]
+    #         inter_diff = max(group_avg_temps) - min(group_avg_temps)
+    #         total_reward -= 1.5 * inter_diff  # 组间温差系数
+    #         breakdown["inter_group_temp_diff_penalty"] -= 1.5 * inter_diff
+
+    #     # === 4. 控制成本 ===
+    #     # cost = λ * R_flow + μ * |T_inlet(t) - T_inlet(t-1)|
+    #     flow_cost = self.lambda_cost * flow_rate
+    #     smooth_cost = 0.0
+    #     if last_action is not None:
+    #         smooth_cost = self.mu_cost * abs(inlet_temp - last_action[0])
+
+    #     total_reward -= (flow_cost + smooth_cost)
+    #     breakdown["control_cost"] = -(flow_cost + smooth_cost)
+
+    #     breakdown["total"] = total_reward
+    #     return total_reward, breakdown
+    
     def _calculate_reward(
-        self, obs: np.ndarray, current_action: list, last_action: list
+    self, obs: np.ndarray, current_action: list, last_action: list
     ) -> tuple:
-        """
-        计算奖励函数
-
-        奖励组成:
-            1. 温度偏差惩罚: 偏离目标温度的平方
-            2. 温度达标奖励: 温度在目标范围内时获得正奖励
-            3. 组间温差惩罚: 不同组之间的温差
-            4. 控制成本: λ * flow_rate + μ * |Δinlet_temp|
-
-        Args:
-            obs: 当前观测
-            current_action: 当前动作 [inlet_temp, flow_rate]
-            last_action: 上一步动作
-
-        Returns:
-            total_reward: 总奖励
-            breakdown: 奖励分解字典
-        """
         inlet_temp, flow_rate = current_action
         target_temp = self.target_temp
 
@@ -404,40 +461,38 @@ class MultiBatteryEnv(gym.Env):
 
         total_reward = 0.0
 
-        # === 1. 温度偏差惩罚 ===
+        # === 1. 优化温度偏差惩罚（线性惩罚，避免平方） ===
         for i in range(self.num_groups):
             core_t = obs[i * 8 + 2]  # 核心平均温度
             dist = abs(core_t - target_temp)
-            temp_penalty = 0.5 * (dist ** 2)  # 平方惩罚
+            
+            # 关键优化：线性惩罚 + 限制最大偏差
+            temp_penalty = 0.6 * dist  # 从0.5*dist² → 0.8*dist (线性)
             total_reward -= temp_penalty
             breakdown["temp_penalty"] -= temp_penalty
 
-        # === 2. 温度达标奖励 (新增) ===
-        # 当温度在目标范围附近时给予正奖励，让训练更容易收敛
+        # === 2. 优化温度达标奖励（量级匹配惩罚） ===
         temp_tolerance = 5.0  # 温度容差范围 ±5K
         for i in range(self.num_groups):
             core_t = obs[i * 8 + 2]
             if abs(core_t - target_temp) < temp_tolerance:
-                # 温度越接近目标，奖励越高
                 reward_factor = 1.0 - abs(core_t - target_temp) / temp_tolerance
-                temp_reward = 10.0 * reward_factor  # 最高10分
+                # 优化：最高奖励从10→2.0 (匹配惩罚量级)
+                temp_reward = 4.0 * reward_factor  
                 total_reward += temp_reward
                 breakdown["temp_reward"] += temp_reward
 
-        # === 3. 组间温差惩罚 ===
+        # === 3. 优化组间温差惩罚（系数降低） ===
         if self.num_groups > 1:
             group_avg_temps = [obs[i * 8 + 2] for i in range(self.num_groups)]
             inter_diff = max(group_avg_temps) - min(group_avg_temps)
-            total_reward -= 1.5 * inter_diff  # 组间温差系数
-            breakdown["inter_group_temp_diff_penalty"] -= 1.5 * inter_diff
+            # 优化：系数从1.5→0.5 (更合理)
+            total_reward -= 0.5 * inter_diff
+            breakdown["inter_group_temp_diff_penalty"] -= 0.5 * inter_diff
 
-        # === 4. 控制成本 ===
-        # cost = λ * R_flow + μ * |T_inlet(t) - T_inlet(t-1)|
-        flow_cost = self.lambda_cost * flow_rate
-        smooth_cost = 0.0
-        if last_action is not None:
-            smooth_cost = self.mu_cost * abs(inlet_temp - last_action[0])
-
+        # === 4. 控制成本（保持合理） ===
+        flow_cost = self.lambda_cost * flow_rate  # λ=0.5 (合理)
+        smooth_cost = self.mu_cost * abs(inlet_temp - last_action[0]) if last_action else 0.0
         total_reward -= flow_cost + smooth_cost
         breakdown["control_cost"] = -(flow_cost + smooth_cost)
 
